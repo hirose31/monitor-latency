@@ -1,0 +1,84 @@
+#!/bin/sh
+
+prog=${0##*/}
+usage() {
+  [ $# -ne 0 ] && echo "[ERROR] $@" 1>&2
+  cat <<EOUSAGE
+[usage]
+  $prog -r rrdfile [-o graphfile] [-s start] [-e end]
+    -r rrdfile  : rrd file.
+    -o graphfile: output image file name. default is STDOUT.
+    -s start    : the start of the time range. default is -24H
+                  see also TIME SPECIFICATION section in rrdfetch man page.
+    -e end      : the end of the time range. default is NOW
+
+EOUSAGE
+  exit 1
+}
+
+rrd=
+out=-
+start=-24h
+end=NOW
+vecho() { :; }
+while getopts "r:o:s:e:v" opt; do
+  case $opt in
+    r)
+      rrd=$OPTARG ;;
+    o)
+      out=$OPTARG ;;
+    s)
+      start=$OPTARG ;;
+    e)
+      end=$OPTARG ;;
+    v)
+      vecho() { echo "VERBO: $@" 1>&2; } ;;
+    *)
+      usage ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+vecho "rrd=$rrd out=$out"
+vecho "start=$start end=$end"
+
+[ -z "$rrd" ] && usage "missing: -r rrdfile"
+[ -r "$rrd" ] || usage "cannot read rrdfile: $rrd"
+
+rrdtool graph $out \
+  -s "$start" -e "$end" \
+  --slope \
+  DEF:pkt_loss_r=$rrd:pkt_loss:MAX \
+  DEF:rtt_min_r=$rrd:rtt_min:MAX \
+  DEF:rtt_avg_r=$rrd:rtt_avg:MAX \
+  DEF:rtt_max_r=$rrd:rtt_max:MAX \
+  DEF:rtt_mdev_r=$rrd:rtt_mdev:MAX \
+  CDEF:rtt_max=rtt_max_r,1000,/ \
+  CDEF:rtt_avg=rtt_avg_r,1000,/ \
+  CDEF:rtt_min=rtt_min_r,1000,/ \
+  VDEF:rtt_min_last=rtt_min,LAST \
+  VDEF:rtt_avg_last=rtt_avg,LAST \
+  VDEF:rtt_max_last=rtt_max,LAST \
+  VDEF:rtt_span_min=rtt_min,MINIMUM \
+  VDEF:rtt_span_avg=rtt_avg,AVERAGE \
+  VDEF:rtt_span_max=rtt_max,MAXIMUM \
+  VDEF:pkt_loss_max=pkt_loss_r,MAXIMUM \
+  CDEF:pkt_loss_min_r=pkt_loss_r,1,INF,LIMIT \
+  VDEF:pkt_loss_min=pkt_loss_min_r,MINIMUM \
+  CDEF:pkt_loss=rtt_span_max,pkt_loss_r,*,30,/ \
+  AREA:rtt_max#CFE5FF \
+  AREA:rtt_min#FFFFFF \
+  LINE1:rtt_avg#001D3F \
+  COMMENT:'Now   \: \g' \
+  GPRINT:rtt_min_last:'%7.3lf%S/\g' \
+  GPRINT:rtt_avg_last:'%7.3lf%S/\g' \
+  GPRINT:rtt_max_last:'%7.3lf%S\l' \
+  COMMENT:'During\: \g' \
+  GPRINT:rtt_span_min:'%7.3lf%S/\g' \
+  GPRINT:rtt_span_avg:'%7.3lf%S/\g' \
+  GPRINT:rtt_span_max:'%7.3lf%S\l' \
+  COMMENT:'rtt   \:  min/avg/max\l' \
+  LINE1:pkt_loss#FF0000 \
+  GPRINT:pkt_loss_min:'pkt loss\: min=%3.0lf%%\g' \
+  GPRINT:pkt_loss_max:' max=%3.0lf%%\l' \
+;
