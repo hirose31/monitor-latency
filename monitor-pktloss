@@ -1,0 +1,229 @@
+#!/usr/bin/env perl
+# Time-stamp: <2009-08-14 14:21:03 JST, hirose31>
+
+use strict;
+use warnings;
+use Carp;
+use Data::Dumper;
+use IO::File;
+STDOUT->autoflush(1);
+STDERR->autoflush(1);
+use Getopt::Long;
+use Pod::Usage;
+
+use RRDTool::OO;
+use Proc::Class;
+use AnyEvent;
+use Time::HiRes qw(gettimeofday);
+use POSIX qw(strftime);
+
+my $Debug = 0;
+
+sub dprint (@) {
+    return unless $Debug;
+    chomp(my @m = @_);
+    print STDERR 'DEBUG: ', join(" ", @m),"\n";
+}
+
+sub dprint2(@) {
+    dprint @_ if $Debug >= 2;
+}
+
+sub logger {
+    chomp(my @m = @_);
+    my ($sec, $microsec) = gettimeofday;
+    printf("%s.%d %s\n",
+           strftime("%Y-%m-%d %H:%M:%S", localtime($sec)),
+           $microsec,
+           join(" ", @m),
+           );
+}
+
+
+my $RRD_Dir = "/home/hirose31/lang/rrd/pktloss/rrd";
+
+MAIN: {
+    my %opt;
+    my $hosts     = [];
+    my $loop      = 1;
+    my $count     = 10;
+    my $interval  = 500;
+    my $ping_wait = 20; # ping -w option
+    Getopt::Long::Configure("bundling");
+    GetOptions(\%opt,
+               'debug|d+'     => \$Debug,
+               'no-loop|1',
+               'host|h=s@'    => \$hosts,
+               'count|c=i'    => \$count,
+               'interval|i=i' => \$interval,
+               'rrd-dir|r=s'  => \$RRD_Dir,
+               'help|?' => sub{ pod2usage(-verbose=>1) }) or pod2usage();
+    dprint  "DEBUG MODE LEVEL=$Debug";
+    dprint2 Dumper(\%opt);
+    dprint2 Dumper($hosts);
+    dprint2 "count=$count interval=$interval loop=$loop";
+    dprint2 "RRD_Dir=$RRD_Dir";
+
+    pod2usage(-message => "missing: -h name=host") unless @$hosts;
+
+    my @targets;
+    for (@$hosts) {
+        my @e = split /=/, $_, 2;
+        if (scalar(@e) != 2) {
+            carp "invalid format: $_";
+            next;
+        }
+        push @targets, { name => $e[0], host => $e[1] };
+    }
+
+    # 一回りループがまわるのにかかる最大時間 = $ping_wait + $interval
+    while ($loop) {
+        my @guard;
+        my @cvs;
+
+        logger "ping with Proc::Class";
+        for my $t (@targets) {
+            my $ping = Proc::Class->new(
+                cmd  => 'ping',
+                argv => ['-c', $count, '-w', $ping_wait, qw(-i 0.4 -nq), $t->{host}],
+               );
+            my $cv = AnyEvent->condvar;
+            push @cvs, $cv;
+            push @guard, AnyEvent->child(
+                pid => $ping->pid,
+                cb  => sub {
+                    my($pid, $status) = @_;
+                    my $out = $ping->slurp_stdout();
+                    $cv->send([$status, $t, $out]);
+                }
+               );
+        }
+
+        logger "process result of ping";
+        for my $cv (@cvs) {
+            my ($status, $target, $out) = @{ $cv->recv };
+
+            my $result;
+            for (split /\n/, $out) {
+                if (m{^\d+ packets transmitted.+?(\d+)% packet loss}) {
+                    $result->{pkt_loss} = $1;
+                } elsif (m{^rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+) ms}) {
+                    $result->{rtt_min}  = $1;
+                    $result->{rtt_avg}  = $2;
+                    $result->{rtt_max}  = $3;
+                    $result->{rtt_mdev} = $4;
+                }
+            }
+
+            store_result($target, $result);
+        }
+
+        last if $opt{'no-loop'};
+        logger "sleep ($interval)...";
+        sleep $interval;
+    }
+
+    exit 0;
+}
+
+sub store_result {
+    my($target, $result) = @_;
+    dprint2 Dumper($target);
+    dprint2 Dumper($result);
+    logger sprintf("%s=%s: %6.3f/%6.3f/%6.3f %d%%",
+                   $target->{name}, $target->{host},
+                   map { $result->{$_} } qw(rtt_min rtt_avg rtt_max pkt_loss),
+                  );
+
+    my $rrd_file = sprintf "%s/ping_%s.rrd", $RRD_Dir, $target->{name};
+    my $rrd = RRDTool::OO->new(file => $rrd_file);
+
+    $rrd->create(
+        step => 600,
+        data_source => {
+            name      => "pkt_loss",
+            type      => "GAUGE",
+            heartbeat => 1500,
+        },
+        data_source => {
+            name      => "rtt_min",
+            type      => "GAUGE",
+            heartbeat => 1500,
+        },
+        data_source => {
+            name      => "rtt_avg",
+            type      => "GAUGE",
+            heartbeat => 1500,
+        },
+        data_source => {
+            name      => "rtt_max",
+            type      => "GAUGE",
+            heartbeat => 1500,
+        },
+        data_source => {
+            name      => "rtt_mdev",
+            type      => "GAUGE",
+            heartbeat => 1500,
+        },
+
+        archive => {
+            rows    => 150,
+            cpoints => 1,
+            cfunc   => "MAX",
+        },
+        archive => {
+            rows    => 115,
+            cpoints => 4,
+            cfunc   => "MAX",
+        },
+        archive => {
+            rows    => 55,
+            cpoints => 20,
+            cfunc   => "MAX",
+        },
+        archive => {
+            rows    => 40,
+            cpoints => 120,
+            cfunc   => "MAX",
+        },
+        archive => {
+            rows    => 100,
+            cpoints => 1440,
+            cfunc   => "MAX",
+        },
+       ) unless -e $rrd_file;
+
+    $rrd->update(values => $result);
+}
+
+__END__
+
+=head1 NAME
+
+B<program_name> - abstract
+
+=head1 SYNOPSIS
+
+B<program_name> [B<-d>] [B<-1>] [B<-c> N] [B<-i> N] [B<-r> RRRD_DIR] B<-h> I<rrd=host> B<-h> I<rrd=host> ...
+
+$ program_name -dd -h google=www.google.com -h jpix=www.jpix.ad.jp
+
+=head1 AUTHOR
+
+HIROSE, Masaaki E<lt>hirose31 _at_ gmail.comE<gt>
+
+=head1 THANKS
+
+tokuhirom L<http://pastie.org/582356>
+
+=cut
+
+# for Emacsen
+# Local Variables:
+# mode: cperl
+# cperl-indent-level: 4
+# indent-tabs-mode: nil
+# coding: utf-8
+# End:
+
+# vi: set ts=4 sw=4 sts=0 :

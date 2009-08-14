@@ -1,0 +1,5 @@
+monitor-pktloss
+================================
+
+store result of ping command (% of packet loss and RTT) in rrd file.
+
