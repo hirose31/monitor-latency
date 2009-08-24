@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# Time-stamp: <2009-08-14 16:32:35 JST, hirose31>
+# Time-stamp: <2009-08-24 13:35:22 JST, hirose31>
 
 use strict;
 use warnings;
@@ -166,24 +166,24 @@ sub store_result {
             heartbeat => 1500,
         },
 
-        archive => {
+        archive => { # 1.04[day]
             rows    => 150,
             cpoints => 1,
             cfunc   => "MAX",
         },
-        archive => {
+        archive => { # 3.19[day]
             rows    => 115,
             cpoints => 4,
             cfunc   => "MAX",
         },
-        archive => {
-            rows    => 55,
-            cpoints => 20,
+        archive => { # 7.64[day]
+            rows    => 200,
+            cpoints => 6,
             cfunc   => "MAX",
         },
-        archive => {
-            rows    => 40,
-            cpoints => 120,
+        archive => { # 33.33[day]
+            rows    => 400,
+            cpoints => 12,
             cfunc   => "MAX",
         },
         archive => {
