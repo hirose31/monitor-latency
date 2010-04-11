@@ -1,5 +1,4 @@
 #!/usr/bin/env perl
-# Time-stamp: <2009-08-24 13:35:22 JST, hirose31>
 
 use strict;
 use warnings;
@@ -40,7 +39,7 @@ sub logger {
 }
 
 
-my $RRD_Dir = "/home/hirose31/lang/rrd/pktloss/rrd";
+my $RRD_Dir;
 
 MAIN: {
     my %opt;
@@ -58,13 +57,16 @@ MAIN: {
                'interval|i=i' => \$interval,
                'rrd-dir|r=s'  => \$RRD_Dir,
                'help|?' => sub{ pod2usage(-verbose=>1) }) or pod2usage();
+    pod2usage(-message => "missing: -r rrd_dir")   unless $RRD_Dir;
+    pod2usage(-message => "no such directory: $RRD_Dir")   unless -d $RRD_Dir;
+    pod2usage(-message => "missing: -h name=host") unless @$hosts;
+
     dprint  "DEBUG MODE LEVEL=$Debug";
     dprint2 Dumper(\%opt);
     dprint2 Dumper($hosts);
     dprint2 "count=$count interval=$interval loop=$loop";
     dprint2 "RRD_Dir=$RRD_Dir";
 
-    pod2usage(-message => "missing: -h name=host") unless @$hosts;
 
     my @targets;
     for (@$hosts) {
@@ -81,6 +83,7 @@ MAIN: {
         my @guard;
         my @cvs;
 
+        # fixme support httping
         logger "ping with Proc::Class";
         for my $t (@targets) {
             my $ping = Proc::Class->new(
@@ -204,9 +207,58 @@ B<monitor-pktloss> - store result of ping command (% of packet loss and RTT) in 
 
 =head1 SYNOPSIS
 
-B<monitor-pktloss> [B<-d>] [B<-1>] [B<-c> N] [B<-i> N] [B<-r> RRRD_DIR] B<-h> I<rrd=host> B<-h> I<rrd=host> ...
+B<monitor-pktloss> [B<-d>] [B<-1>] [B<-c> N] [B<-i> N]
+B<-r> RRD_DIR
+B<-h> I<RRD=HOST> [B<-h> I<RRD=HOST> ...]
 
-$ program_name -dd -h google=www.google.com -h jpix=www.jpix.ad.jp
+  $ monitor-pktloss -r /var/rrd -h google=www.google.com -h jpix=www.jpix.ad.jp
+
+=head1 DESCRIPTION
+
+=over 4
+
+=item B<--rrd-dir Str>
+
+=item B<-r Str>
+
+store rrdfiles into this directory. requires.
+
+=item B<--host Str>
+
+=item B<-h Str>
+
+target host and label.
+
+format:
+  Str: "LABEL=HOSTNAME"
+
+requires at least one -h option
+
+=item B<--count Num>
+
+=item B<-c Num>
+
+value of ping -c option. default is 10.
+
+=item B<--interval Num>
+
+=item B<-i Num>
+
+sleep second between intervals. default is 500 [sec].
+
+=item B<--no-loop>
+
+=item B<-1>
+
+exit unless loop. for debug.
+
+=item B<--debug>
+
+=item B<-d>
+
+increment debug level
+
+=back
 
 =head1 AUTHOR
 

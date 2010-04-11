@@ -1,0 +1,89 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Content-Style-Type"  content="text/css">
+<meta http-equiv="Content-Script-Type" content="text/javascript">
+<title>monitor ping</title>
+
+<script type="text/javascript" src="http://www.google.com/jsapi"></script>
+<script type="text/javascript">google.load("jquery", "1.4");</script>
+<script type="text/javascript" src="graphs.js"></script>
+
+<style type="text/css">
+img.loading {
+    position: absolute;
+    z-index:100;
+}
+</style>
+
+<script type="text/javascript">
+$(function() {
+      var get_loading_postion = function(imgx, imgy, imgw, imgh) {
+          return [parseInt((imgw-48)/2+imgx), parseInt((imgh-48)/2+imgy)];
+      }
+
+      // define "graphs" in graphs.js
+      var draw_graph = "";
+      for (var i = 0; i < graphs.length; i++) {
+          draw_graph += '<img class="graph" src="graph.cgi?n='+graphs[i]+'&s=-1d">';
+      }
+      $("#graph").append(draw_graph);
+
+      // change time period
+      $("#range").change(
+          function() {
+              $("#loading").empty();
+              var start = $(this).val();
+              $("img.graph").each(
+                  function(){
+                      var imgsrc = this.src;
+                      var lx,ly;
+
+                      [lx,ly] = get_loading_postion(this.x, this.y, this.width, this.height);
+
+                      var loading_id = lx+'x'+ly;
+                      $(this).fadeTo(500, 0.2,
+                                     function() {
+                                         $("#loading").append('<img id="'+loading_id+'"class="loading" style="top:'+ly+'px;left:'+lx+'px;" src="loading.gif">');
+                                     })
+
+                      $(this).attr("src",
+                                   function(){
+                                       return imgsrc.replace(/&s=[^&]+/, "&s="+start);
+                                   });
+                      $(this).load(
+                          function(){
+                              $(this).fadeTo(500,1.0);
+                              $("#"+loading_id).remove();
+                          });
+
+                  }); // /each
+          }); // /change
+  });
+</script>
+</head>
+
+<body>
+
+<h1><a name="title">monitor</a></h1>
+
+<select id="range">
+<option value="-1h">hour</option>
+<option value="-6h">6hours</option>
+<option value="-12h">12hours</option>
+<option value="-1d" selected>day</option>
+<option value="-3d">3days</option>
+<option value="-1w">week</option>
+<option value="-1m">month</option>
+<option value="-1y">year</option>
+</select>
+
+<h2><a name="ping">ping (rtt, packet loss)</a></h2>
+
+<div id="graph"></div>
+<div id="loading"></div>
+
+</body>
+</html>
