@@ -27,7 +27,7 @@ croak "missing: n" unless param("n");
 
 $Debug = param("debug") if param("debug");
 
-my $rrdfile = sprintf("%s/ping_%s.rrd", $RRD_Dir, param("n") );
+my $rrdfile = sprintf("%s/%s.rrd", $RRD_Dir, param("n") );
 croak "cannot read rrdfile: $rrdfile" unless -r $rrdfile;
 
 print header(-type => $Debug ? "text/plain" : "image/png", -expires => '-1h' );
@@ -36,6 +36,7 @@ print_graph(
     rrd   => $rrdfile,
     start => param("s")||"",
     end   => param("e")||"",
+    draw_packet_loss => param("np") ? 0 : 1,
    );
 exit;
 
@@ -76,9 +77,9 @@ rrdtool graph - \
   DEF:rtt_avg_r=@@rrd@@:rtt_avg:MAX \
   DEF:rtt_max_r=@@rrd@@:rtt_max:MAX \
   DEF:rtt_mdev_r=@@rrd@@:rtt_mdev:MAX \
-  CDEF:rtt_max=rtt_max_r,1000,/,0,0.300,LIMIT \
-  CDEF:rtt_avg=rtt_avg_r,1000,/,0,0.300,LIMIT \
-  CDEF:rtt_min=rtt_min_r,1000,/,0,0.300,LIMIT \
+  CDEF:rtt_max=rtt_max_r,1000,/,0,0.400,LIMIT \
+  CDEF:rtt_avg=rtt_avg_r,1000,/,0,0.400,LIMIT \
+  CDEF:rtt_min=rtt_min_r,1000,/,0,0.400,LIMIT \
   VDEF:rtt_min_last=rtt_min,LAST \
   VDEF:rtt_avg_last=rtt_avg,LAST \
   VDEF:rtt_max_last=rtt_max,LAST \
@@ -92,20 +93,24 @@ rrdtool graph - \
   AREA:rtt_max#CFE5FF \
   AREA:rtt_min#FFFFFF \
   LINE1:rtt_avg#001D3F \
-  COMMENT:'*Now   \: \g' \
-  GPRINT:rtt_min_last:'%7.3lf%S/\g' \
-  GPRINT:rtt_avg_last:'%7.3lf%S/\g' \
-  GPRINT:rtt_max_last:'%7.3lf%S' \
-  COMMENT:'*During\: \g' \
-  GPRINT:rtt_span_min:'%7.3lf%S/\g' \
-  GPRINT:rtt_span_avg:'%7.3lf%S/\g' \
+  COMMENT:'Now             \: \g' \
+  GPRINT:rtt_min_last:'%7.3lf%S /\g' \
+  GPRINT:rtt_avg_last:'%7.3lf%S /\g' \
+  GPRINT:rtt_max_last:'%7.3lf%S (min/avg/max)\l' \
+  COMMENT:'Displayed period\: \g' \
+  GPRINT:rtt_span_min:'%7.3lf%S /\g' \
+  GPRINT:rtt_span_avg:'%7.3lf%S /\g' \
   GPRINT:rtt_span_max:'%7.3lf%S\l' \
-  LINE1:pkt_loss#FF0000 \
-  GPRINT:pkt_loss_min:'pkt loss\: min=%3.0lf%%\g' \
-  GPRINT:pkt_loss_max:' max=%3.0lf%%\l' \
-  HRULE:rtt_span_max#5e0e33:'\: 30% line':dashes=3 \
-;
 EOCMD
+    if ($param{draw_packet_loss}) {
+        $cmd .=<<'EOCMD'
+  LINE1:pkt_loss#FF0000:'packet loss   \:\g' \
+  GPRINT:pkt_loss_min:'%3.0lf%% /\g' \
+  GPRINT:pkt_loss_max:'%3.0lf%% (min/max),' \
+  HRULE:rtt_span_max#5e0e33:'\: packet loss 30%\l':dashes=3 \
+EOCMD
+    }
+    $cmd .= ";";
 
     $cmd =~ s/@@([^@]+?)@@/$param{$1}/ge;
 

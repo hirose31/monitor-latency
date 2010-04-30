@@ -75,7 +75,11 @@ MAIN: {
             carp "invalid format: $_";
             next;
         }
-        push @targets, { name => $e[0], host => $e[1] };
+        push @targets, {
+            name => $e[0],
+            host => $e[1],
+            type => $e[1] =~ /^http/ ? 'http' : 'ping',
+        };
     }
 
     # 一回りループがまわるのにかかる最大時間 = $ping_wait + $interval
@@ -83,13 +87,24 @@ MAIN: {
         my @guard;
         my @cvs;
 
-        # fixme support httping
         logger "ping with Proc::Class";
         for my $t (@targets) {
-            my $ping = Proc::Class->new(
-                cmd  => 'ping',
-                argv => ['-c', $count, '-w', $ping_wait, qw(-i 0.4 -nq), $t->{host}],
-               );
+            my $ping;
+            if ($t->{type} eq 'ping') {
+                $ping = Proc::Class->new(
+                    cmd  => 'ping',
+                    argv => ['-c', $count, '-w', $ping_wait, qw(-i 0.4 -nq), $t->{host}],
+                   );
+            } elsif ($t->{type} eq 'http') {
+                $ping = Proc::Class->new(
+                    cmd  => 'httping',
+                    argv => ['-c', $count, qw(-i 0.7 -r -g), $t->{host}],
+                   );
+            } else {
+                carp "unknown type: $t->{type}";
+                next;
+            }
+
             my $cv = AnyEvent->condvar;
             push @cvs, $cv;
             push @guard, AnyEvent->child(
@@ -107,16 +122,16 @@ MAIN: {
             my ($status, $target, $out) = @{ $cv->recv };
 
             my $result;
-            for (split /\n/, $out) {
-                if (m{^\d+ packets transmitted.+?(\d+)% packet loss}) {
-                    $result->{pkt_loss} = $1;
-                } elsif (m{^rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+) ms}) {
-                    $result->{rtt_min}  = $1;
-                    $result->{rtt_avg}  = $2;
-                    $result->{rtt_max}  = $3;
-                    $result->{rtt_mdev} = $4;
-                }
+            my $analyzer;
+            if ($out =~ m{^\d+ packets transmitted}m) {
+                $analyzer = \&analyze_ping;
+            } elsif ($out =~ m{^\d+ connects,}m) {
+                $analyzer = \&analyze_http;
+            } else {
+                carp "unknown output data: $out";
+                next;
             }
+            $result = $analyzer->($out);
 
             store_result($target, $result);
         }
@@ -138,7 +153,7 @@ sub store_result {
                    map { $result->{$_} } qw(rtt_min rtt_avg rtt_max pkt_loss),
                   );
 
-    my $rrd_file = sprintf "%s/ping_%s.rrd", $RRD_Dir, $target->{name};
+    my $rrd_file = sprintf "%s/%s.rrd", $RRD_Dir, $target->{name};
     my $rrd = RRDTool::OO->new(file => $rrd_file);
 
     $rrd->create(
@@ -199,6 +214,46 @@ sub store_result {
     $rrd->update(values => $result);
 }
 
+sub analyze_ping {
+    my $out = shift;
+
+    my $result = {};
+
+    for (split /\n/, $out) {
+        if (m{^\d+ packets transmitted.+?(\d+)% packet loss}) {
+            $result->{pkt_loss} = $1;
+        } elsif (m{^rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+) ms}) {
+            $result->{rtt_min}  = $1;
+            $result->{rtt_avg}  = $2;
+            $result->{rtt_max}  = $3;
+            $result->{rtt_mdev} = $4;
+        }
+    }
+
+    return $result;
+}
+
+# 5 connects, 5 ok, 0.00% failed
+# round-trip min/avg/max = 322.5/546.0/800.6 ms
+sub analyze_http {
+    my $out = shift;
+
+    my $result = {};
+
+    for (split /\n/, $out) {
+        if (m{^\d+ connect.+?([\d.]+)% failed}) {
+            $result->{pkt_loss} = $1;
+        } elsif (m{^round-trip min/avg/max = ([\d.]+)/([\d.]+)/([\d.]+) ms}) {
+            $result->{rtt_min}  = $1;
+            $result->{rtt_avg}  = $2;
+            $result->{rtt_max}  = $3;
+            $result->{rtt_mdev} = 0;
+        }
+    }
+
+    return $result;
+}
+
 __END__
 
 =head1 NAME
@@ -211,7 +266,10 @@ B<monitor-pktloss> [B<-d>] [B<-1>] [B<-c> N] [B<-i> N]
 B<-r> RRD_DIR
 B<-h> I<RRD=HOST> [B<-h> I<RRD=HOST> ...]
 
-  $ monitor-pktloss -r /var/rrd -h google=www.google.com -h jpix=www.jpix.ad.jp
+  $ monitor-pktloss -r /var/rrd \
+      -h google=www.google.com \
+      -h jpix=www.jpix.ad.jp \
+      -h google_h=http://www.google.co.jp/webhp
 
 =head1 DESCRIPTION
 

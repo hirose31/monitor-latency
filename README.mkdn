@@ -1,5 +1,64 @@
-monitor-pktloss
+monitor-latency
 ================================
 
-store result of ping command (% of packet loss and RTT) in rrd file.
+store result of ping command (% of packet loss and RTT) in rrd file and draw it.
+
+
+store into rrd file
+--------------------------------
+
+run "monitor-latency".
+
+    #!/bin/sh
+    exec 2>&1
+    DAEMON=/usr/irori/sys/monitor-latency/monitor-latency
+    RRDDIR=/usr/irori/var/monitor-latency
+    HOSTS='
+    -h google=www.google.com
+    -h jpix=www.jpix.ad.jp
+    -h ec2east=174.129.166.26
+    -h ec2west=204.236.187.187
+    -h ec2sg=175.41.168.254
+    '
+    
+    if [ ! -x "$DAEMON" ]; then
+      echo "not executable: $DAEMON"
+      exit 1
+    fi
+    
+    exec setuidgid watcher \
+      env - PATH="/usr/local/bin:$PATH" \
+      envdir ./env \
+      $DAEMON -r $RRDDIR -d $HOSTS
+
+
+draw graph
+--------------------------------
+
+    cp example.html WEBDIR/monitor-latency/index.html
+    cp loading.gif  WEBDIR/monitor-latency/
+    cat <<EOF >WEBDIR/monitor-latency/graphs.js
+    var graphs = [
+       "google", "jpix"
+      ,"ec2east","ec2west","ec2sg"
+    ];
+    EOF
+
+specify directory path of rrd files by env var or query string.
+
+A. httpd.conf:
+
+    <Location /monitor-latency>
+      SetEnv RRD_DIR "/usr/irori/var/monitor-pktloss"
+    </Location>
+
+B. add query string "r":
+
+    vi WEBDIR/monitor-latency/index.html
+           // define "graphs" in graphs.js
+           for (var i = 0; i < graphs.length; i++) {
+    -          draw_graph += '<img class="graph" src="graph.cgi?n='+graphs[i]+'&s=-1d">';
+    +          draw_graph += '<img class="graph" src="graph.cgi?n='+graphs[i]+'&s=-1d&r=/usr/irori/var/monitor-pktloss">';
+           }
+           $("#graph").append(draw_graph);
 

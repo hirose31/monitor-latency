@@ -14,20 +14,24 @@
 <style type="text/css">
 img.loading {
     position: absolute;
-    z-index:100;
+    z-index: 9;
 }
 </style>
 
 <script type="text/javascript">
 $(function() {
+      var start, draw_graph = "";
+
       var get_loading_postion = function(imgx, imgy, imgw, imgh) {
           return [parseInt((imgw-48)/2+imgx), parseInt((imgh-48)/2+imgy)];
       }
 
+      // preload loading image
+      $('<img />').attr("src","loading.gif");
+
       // define "graphs" in graphs.js
-      var draw_graph = "";
       for (var i = 0; i < graphs.length; i++) {
-          draw_graph += '<img class="graph" src="graph.cgi?n='+graphs[i]+'&s=-1d">';
+          draw_graph += '<img class="graph" src="graph.cgi?n='+graphs[i]+'&s=-1d&r=/usr/irori/var/monitor-pktloss">';
       }
       $("#graph").append(draw_graph);
 
@@ -35,32 +39,35 @@ $(function() {
       $("#range").change(
           function() {
               $("#loading").empty();
-              var start = $(this).val();
+              start = $(this).val();
               $("img.graph").each(
                   function(){
-                      var imgsrc = this.src;
-                      var lx,ly;
+                      $(this)
+                        .bind("new-image-loaded", new_image_loaded)
+                        .fadeTo(500, 0.2, load_new_image);
+                  });
+          });
 
-                      [lx,ly] = get_loading_postion(this.x, this.y, this.width, this.height);
+      var load_new_image = function() {
+          var oldimg = $(this);
+          var lx,ly;
+          [lx,ly] = get_loading_postion(this.x, this.y, this.width, this.height);
+          var loading_id = lx+'x'+ly;
+          $("#loading").append('<img id="'+loading_id+'"class="loading" style="top:'+ly+'px;left:'+lx+'px;" src="loading.gif">');
 
-                      var loading_id = lx+'x'+ly;
-                      $(this).fadeTo(500, 0.2,
+          oldimg.trigger("new-image-loaded", [loading_id]);
+      }
+
+      var new_image_loaded = function(e, loading_id) {
+          $(this)
+            .unbind()
+            .attr("src", $(this).attr("src").replace(/&s=[^&]+/, "&s="+start))
+            .load(function() {
+                      $(this).fadeTo(500,1.0,
                                      function() {
-                                         $("#loading").append('<img id="'+loading_id+'"class="loading" style="top:'+ly+'px;left:'+lx+'px;" src="loading.gif">');
-                                     })
-
-                      $(this).attr("src",
-                                   function(){
-                                       return imgsrc.replace(/&s=[^&]+/, "&s="+start);
-                                   });
-                      $(this).load(
-                          function(){
-                              $(this).fadeTo(500,1.0);
-                              $("#"+loading_id).remove();
-                          });
-
-                  }); // /each
-          }); // /change
+                                         $("#"+loading_id).hide().remove();
+                                     });
+                  })};
   });
 </script>
 </head>
