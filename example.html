@@ -31,7 +31,7 @@ $(function() {
 
       // define "graphs" in graphs.js
       for (var i = 0; i < graphs.length; i++) {
-          draw_graph += '<img class="graph" src="graph.cgi?n='+graphs[i]+'&s=-1d&r=/usr/irori/var/monitor-pktloss">';
+          draw_graph += '<img class="graph" src="graph.cgi?n='+graphs[i]+'&s=-1d&r=/usr/irori/var/monitor-latency">';
       }
       $("#graph").append(draw_graph);
 

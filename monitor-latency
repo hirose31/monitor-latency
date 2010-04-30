@@ -258,15 +258,15 @@ __END__
 
 =head1 NAME
 
-B<monitor-pktloss> - store result of ping command (% of packet loss and RTT) in rrd file.
+B<monitor-latency> - store result of ping command (% of packet loss and RTT) in rrd file.
 
 =head1 SYNOPSIS
 
-B<monitor-pktloss> [B<-d>] [B<-1>] [B<-c> N] [B<-i> N]
+B<monitor-latency> [B<-d>] [B<-1>] [B<-c> N] [B<-i> N]
 B<-r> RRD_DIR
 B<-h> I<RRD=HOST> [B<-h> I<RRD=HOST> ...]
 
-  $ monitor-pktloss -r /var/rrd \
+  $ monitor-latency -r /var/rrd \
       -h google=www.google.com \
       -h jpix=www.jpix.ad.jp \
       -h google_h=http://www.google.co.jp/webhp
